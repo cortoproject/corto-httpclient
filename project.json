@@ -2,6 +2,9 @@
     "id": "corto/httpclient",
     "type": "package",
     "value": {
+        "author": "Sander Mertens",
+        "version": "1.0.0",
+        "description": "HTTP client abstraction",        
         "lib": ["curl"]
     }
 }
