@@ -1,0 +1,13 @@
+in package /corto/httpclient
+
+struct Result::
+  status: uint16
+  response: string
+
+Result get(string url, string fields)
+Result post(string url, string fields)
+
+struct Url::
+  address: string
+  response: string, private | local
+  string request()

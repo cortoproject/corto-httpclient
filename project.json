@@ -1,0 +1,7 @@
+{
+    "id": "corto/httpclient",
+    "type": "package",
+    "value": {
+        "lib": ["curl"]
+    }
+}
