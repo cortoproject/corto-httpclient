@@ -6,6 +6,7 @@ struct Result::
 
 Result get(string url, string fields)
 Result post(string url, string fields)
+string encode_fields(string fields)
 
 struct Url::
   address: string

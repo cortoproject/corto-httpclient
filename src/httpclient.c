@@ -2,7 +2,6 @@
 
 #include <corto/httpclient/httpclient.h>
 #include <curl/curl.h>
-
 #define INITIAL_BODY_BUFFER_SIZE (512)
 struct url_data {
     size_t size;
@@ -43,17 +42,9 @@ httpclient_Result httpclient_get(
     }
 
     /* Build URL with Fields concatenated as parameters */
+    corto_string urlParams = NULL;
     if ((fields) && (strlen(fields) > 0)) {
-        char *encodedFields = curl_easy_escape(curl, fields, strlen(fields));
-        if (encodedFields) {
-            url = corto_asprintf("%s&%s", url, encodedFields);
-            curl_free(encodedFields);
-        }
-        else
-        {
-            corto_error("Failed to escape GET fields: [%s]", fields);
-            goto error_cleanup;
-        }
+        urlParams = corto_asprintf("%s&%s", url, fields);
     }
 
     struct url_data data = {0, NULL};
@@ -63,7 +54,16 @@ httpclient_Result httpclient_get(
     }
 
     data.buffer[0] = '\0';
-    curl_easy_setopt(curl, CURLOPT_URL, url);
+    ///TODO use verbose when CORTO Trace = TRUE
+    curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+    if (urlParams) {
+        curl_easy_setopt(curl, CURLOPT_URL, urlParams);
+    }
+
+    else {
+        curl_easy_setopt(curl, CURLOPT_URL, url);
+    }
+
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
     CURLcode res = curl_easy_perform(curl);
@@ -74,11 +74,12 @@ httpclient_Result httpclient_get(
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.status);
     result.response = data.buffer;
     curl_easy_cleanup(curl);
+    if (urlParams) {
+        corto_dealloc(urlParams);
+    }
+
     return result;
 error:
-    return (httpclient_Result){0, NULL};
-error_cleanup:
-    curl_easy_cleanup(curl);
     return (httpclient_Result){0, NULL};
 }
 
@@ -134,4 +135,11 @@ int httpclientMain(int argc, char *argv[]) {
     /* Insert implementation */
 
     return 0;
+}
+
+corto_string httpclient_encode_fields(
+    corto_string fields)
+{
+    corto_string encoded = curl_easy_escape(NULL, fields, 0);
+    return encoded;
 }
