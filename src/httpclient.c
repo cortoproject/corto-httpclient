@@ -42,6 +42,20 @@ httpclient_Result httpclient_get(
         goto error;
     }
 
+    /* Build URL with Fields concatenated as parameters */
+    if ((fields) && (strlen(fields) > 0)) {
+        char *encodedFields = curl_easy_escape(curl, fields, strlen(fields));
+        if (encodedFields) {
+            url = corto_asprintf("%s&%s", url, encodedFields);
+            curl_free(encodedFields);
+        }
+        else
+        {
+            corto_error("Failed to escape GET fields: [%s]", fields);
+            goto error_cleanup;
+        }
+    }
+
     struct url_data data = {0, NULL};
     data.buffer = corto_alloc(INITIAL_BODY_BUFFER_SIZE);
     if (!data.buffer) {
@@ -62,6 +76,9 @@ httpclient_Result httpclient_get(
     curl_easy_cleanup(curl);
     return result;
 error:
+    return (httpclient_Result){0, NULL};
+error_cleanup:
+    curl_easy_cleanup(curl);
     return (httpclient_Result){0, NULL};
 }
 
@@ -115,7 +132,6 @@ int clientMain(int argc, char *argv[]) {
 int httpclientMain(int argc, char *argv[]) {
 
     /* Insert implementation */
-    
+
     return 0;
 }
-
