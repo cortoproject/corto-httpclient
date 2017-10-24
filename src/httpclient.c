@@ -53,9 +53,11 @@ httpclient_Result httpclient_get(
         goto error;
     }
 
+    if (corto_verbosityGet() <= CORTO_TRACE) {
+        curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+    }
+
     data.buffer[0] = '\0';
-    ///TODO use verbose when CORTO Trace = TRUE
-    curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
     if (urlParams) {
         curl_easy_setopt(curl, CURLOPT_URL, urlParams);
     }
