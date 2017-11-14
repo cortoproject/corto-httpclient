@@ -2,15 +2,23 @@
 
 #include <corto/httpclient/httpclient.h>
 #include <curl/curl.h>
+
 #define INITIAL_BODY_BUFFER_SIZE (512)
 
+/* Logging Support */
 corto_buffer g_logBuffer;
 bool g_logSet = false;
-
 struct url_data {
     size_t size;
     char* buffer;
 };
+
+/* Local Configuration */
+static corto_threadKey TLS_ConnectTimeoutKey;
+static corto_threadKey TLS_TimeoutKey;
+#define DEFAULT_CONNECT_TIMEOUT 500
+#define DEFAULT_TIMEOUT 300 * 1000
+
 size_t write_data(void *ptr, size_t size, size_t nmemb, struct url_data *data) {
     size_t index = data->size;
     size_t n = (size * nmemb);
@@ -62,6 +70,19 @@ void httpclient_log_print(void)
     }
 }
 
+void httpclient_timeout_config(CURL *curl)
+{
+    long to = httpclient_getTimeout();
+    if (curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, to) != CURLE_OK) {
+        corto_error("Failed to set CURLOPT_TIMEOUT_MS.");
+    }
+
+    long cto = httpclient_getConnectTimeout();
+    if (curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, cto) != CURLE_OK) {
+        corto_error("Failed to set CURLOPT_CONNECTTIMEOUT_MS.");
+    }
+}
+
 httpclient_Result httpclient_get(
     corto_string url,
     corto_string fields)
@@ -86,7 +107,6 @@ httpclient_Result httpclient_get(
     }
 
     httpclient_log_config(curl);
-
     data.buffer[0] = '\0';
     if (urlParams) {
         curl_easy_setopt(curl, CURLOPT_URL, urlParams);
@@ -95,6 +115,8 @@ httpclient_Result httpclient_get(
     else {
         curl_easy_setopt(curl, CURLOPT_URL, url);
     }
+
+    httpclient_timeout_config(curl);
 
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
@@ -111,7 +133,6 @@ httpclient_Result httpclient_get(
     }
 
     httpclient_log_print();
-
     return result;
 error:
     return (httpclient_Result){0, NULL};
@@ -122,7 +143,6 @@ httpclient_Result httpclient_post(
     corto_string fields)
 {
     httpclient_Result result = {0, NULL};
-
     CURL* curl = curl_easy_init();
     if (!curl) {
         corto_seterr("Could not init curl");
@@ -141,8 +161,9 @@ httpclient_Result httpclient_post(
         goto error;
     }
 
-    httpclient_log_config(curl);
+    httpclient_timeout_config(curl);
 
+    httpclient_log_config(curl);
     data.buffer[0] = '\0';
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
@@ -155,9 +176,7 @@ httpclient_Result httpclient_post(
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.status);
     result.response = data.buffer;
     curl_easy_cleanup(curl);
-
     httpclient_log_print();
-
     return result;
 error:
     return (httpclient_Result){0, NULL};
@@ -175,13 +194,6 @@ int httpclientMain(int argc, char *argv[]) {
     /* Insert implementation */
 
     return 0;
-}
-
-corto_string httpclient_encode_fields(
-    corto_string fields)
-{
-    corto_string encoded = curl_easy_escape(NULL, fields, 0);
-    return encoded;
 }
 
 int httpclient_log(
@@ -230,8 +242,84 @@ int httpclient_log(
     corto_dealloc(bytes);
     */
     corto_buffer_appendstr(&g_logBuffer, data);
-
     // corto_trace("%s", corto_buffer_str(&buffer));
+    return 0;
+}
+
+corto_string httpclient_encodeFields(
+    corto_string fields)
+{
+    corto_string encoded = curl_easy_escape(NULL, fields, 0);
+    return encoded;
+}
+
+/* Maximum time in milliseconds that you allow the libcurl transfer operation
+ * to take. Normally, name lookups can take a considerable time and limiting
+ * operations to less than a few minutes risk aborting perfectly normal
+ * operations. This option may cause libcurl to use the SIGALRM signal to
+ * timeout system calls.
+ */
+int16_t httpclient_setTimeout(
+    int32_t timeout)
+{
+    if (corto_threadTlsKey(&TLS_TimeoutKey, NULL)) {
+        corto_seterr("Failed to initialize timeout key. Error: %s",
+            corto_lasterr());
+        goto error;
+    }
+
+    if (corto_threadTlsSet(TLS_TimeoutKey, (void *)(intptr_t)timeout)) {
+        corto_seterr("Failed to set TLS timeout data. %s", corto_lasterr());
+        goto error;
+    }
 
     return 0;
+error:
+    return -1;
+}
+
+int32_t httpclient_getTimeout(void)
+{
+    int32_t timeout = DEFAULT_TIMEOUT;
+
+    void *data = corto_threadTlsGet(TLS_TimeoutKey);
+    if (data) {
+        timeout = (int32_t)(intptr_t)data;
+    }
+
+    return timeout;
+}
+
+/* Maximum time, in milliseconds, that the connection phase is allowed to
+ * execute before failing to connect to host */
+int16_t httpclient_setConnectTimeout(
+    int32_t timeout)
+{
+    if (corto_threadTlsKey(&TLS_ConnectTimeoutKey, NULL)) {
+        corto_seterr("Failed to initialize connect timeout key. Error: %s",
+            corto_lasterr());
+        goto error;
+    }
+
+    if (corto_threadTlsSet(TLS_ConnectTimeoutKey, (void *) (intptr_t)timeout)) {
+        corto_seterr("Failed to set TLS connect timeout data. %s",
+            corto_lasterr());
+        goto error;
+    }
+
+    return 0;
+error:
+    return -1;
+}
+
+int32_t httpclient_getConnectTimeout(void)
+{
+    int32_t timeout = DEFAULT_CONNECT_TIMEOUT;
+
+    void *data = corto_threadTlsGet(TLS_ConnectTimeoutKey);
+    if (data) {
+        timeout = (int32_t)(intptr_t)data;
+    }
+
+    return timeout;
 }
