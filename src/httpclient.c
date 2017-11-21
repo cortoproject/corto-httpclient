@@ -2,23 +2,24 @@
 
 #include <corto/httpclient/httpclient.h>
 #include <curl/curl.h>
-
 #define INITIAL_BODY_BUFFER_SIZE (512)
-
 /* Logging Support */
 corto_buffer g_logBuffer;
 bool g_logSet = false;
 struct url_data {
-    size_t size;
-    char* buffer;
+    size_t  size;
+    char*   buffer;
 };
 
+typedef struct httpclient_Config_s {
+    int32_t     timeout;
+    int32_t     connectTimeout;
+} *httpclient_Config;
+
 /* Local Configuration */
-static corto_threadKey TLS_ConnectTimeoutKey;
-static corto_threadKey TLS_TimeoutKey;
+static corto_threadKey HTTPCLIENT_KEY_CONFIG;
 #define DEFAULT_CONNECT_TIMEOUT 500
 #define DEFAULT_TIMEOUT 300 * 1000
-
 size_t write_data(void *ptr, size_t size, size_t nmemb, struct url_data *data) {
     size_t index = data->size;
     size_t n = (size * nmemb);
@@ -50,7 +51,8 @@ int httpclient_log(
     size_t size,
     void *userp);
 
-void httpclient_log_config(CURL *curl)
+void httpclient_log_config(
+    CURL *curl)
 {
     if (corto_verbosityGet() <= CORTO_TRACE) {
         curl_easy_setopt(curl, CURLOPT_DEBUGFUNCTION, httpclient_log);
@@ -59,6 +61,7 @@ void httpclient_log_config(CURL *curl)
         corto_buffer_reset(&g_logBuffer);
         g_logBuffer = CORTO_BUFFER_INIT;
     }
+
 }
 
 void httpclient_log_print(void)
@@ -68,9 +71,11 @@ void httpclient_log_print(void)
             corto_buffer_str(&g_logBuffer));
         g_logSet = false;
     }
+
 }
 
-void httpclient_timeout_config(CURL *curl)
+void httpclient_timeout_config(
+    CURL *curl)
 {
     long to = httpclient_getTimeout();
     if (curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, to) != CURLE_OK) {
@@ -81,6 +86,7 @@ void httpclient_timeout_config(CURL *curl)
     if (curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, cto) != CURLE_OK) {
         corto_error("Failed to set CURLOPT_CONNECTTIMEOUT_MS.");
     }
+
 }
 
 httpclient_Result httpclient_get(
@@ -117,7 +123,6 @@ httpclient_Result httpclient_get(
     }
 
     httpclient_timeout_config(curl);
-
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
     CURLcode res = curl_easy_perform(curl);
@@ -162,7 +167,6 @@ httpclient_Result httpclient_post(
     }
 
     httpclient_timeout_config(curl);
-
     httpclient_log_config(curl);
     data.buffer[0] = '\0';
     curl_easy_setopt(curl, CURLOPT_URL, url);
@@ -182,18 +186,11 @@ error:
     return (httpclient_Result){0, NULL};
 }
 
-int clientMain(int argc, char *argv[]) {
+int httpclientMain(int argc, char *argv[]) {
 
     curl_global_init(CURL_GLOBAL_DEFAULT);
 
-    return 0;
-}
-
-int httpclientMain(int argc, char *argv[]) {
-
-    /* Insert implementation */
-
-    return 0;
+    return httpclient_construct();
 }
 
 int httpclient_log(
@@ -262,14 +259,22 @@ corto_string httpclient_encodeFields(
 int16_t httpclient_setTimeout(
     int32_t timeout)
 {
-    if (corto_threadTlsKey(&TLS_TimeoutKey, NULL)) {
-        corto_seterr("Failed to initialize timeout key. Error: %s",
-            corto_lasterr());
-        goto error;
+    httpclient_Config config = (httpclient_Config)corto_threadTlsGet(
+        HTTPCLIENT_KEY_CONFIG);
+    if (!config) {
+        config = (httpclient_Config)malloc(sizeof(struct httpclient_Config_s));
+        if (!config) {
+            corto_seterr("Failed to initialize configuration data.");
+            goto error;
+        }
+        config->timeout  = DEFAULT_CONNECT_TIMEOUT;
     }
 
-    if (corto_threadTlsSet(TLS_TimeoutKey, (void *)(intptr_t)timeout)) {
-        corto_seterr("Failed to set TLS timeout data. %s", corto_lasterr());
+    config->timeout = timeout;
+
+    if (corto_threadTlsSet(HTTPCLIENT_KEY_CONFIG, (void *)config)) {
+        corto_seterr("Failed to set TLS connect timeout data. %s",
+            corto_lasterr());
         goto error;
     }
 
@@ -282,9 +287,10 @@ int32_t httpclient_getTimeout(void)
 {
     int32_t timeout = DEFAULT_TIMEOUT;
 
-    void *data = corto_threadTlsGet(TLS_TimeoutKey);
-    if (data) {
-        timeout = (int32_t)(intptr_t)data;
+    httpclient_Config config = (httpclient_Config)corto_threadTlsGet(
+        HTTPCLIENT_KEY_CONFIG);
+    if (config) {
+        timeout = config->timeout;
     }
 
     return timeout;
@@ -295,13 +301,20 @@ int32_t httpclient_getTimeout(void)
 int16_t httpclient_setConnectTimeout(
     int32_t timeout)
 {
-    if (corto_threadTlsKey(&TLS_ConnectTimeoutKey, NULL)) {
-        corto_seterr("Failed to initialize connect timeout key. Error: %s",
-            corto_lasterr());
-        goto error;
+    httpclient_Config config = (httpclient_Config)corto_threadTlsGet(
+        HTTPCLIENT_KEY_CONFIG);
+    if (!config) {
+        config = (httpclient_Config)malloc(sizeof(struct httpclient_Config_s));
+        if (!config) {
+            corto_seterr("Failed to initialize configuration data.");
+            goto error;
+        }
+        config->timeout  = DEFAULT_TIMEOUT;
     }
 
-    if (corto_threadTlsSet(TLS_ConnectTimeoutKey, (void *) (intptr_t)timeout)) {
+    config->connectTimeout = timeout;
+
+    if (corto_threadTlsSet(HTTPCLIENT_KEY_CONFIG, (void *)config)) {
         corto_seterr("Failed to set TLS connect timeout data. %s",
             corto_lasterr());
         goto error;
@@ -316,10 +329,31 @@ int32_t httpclient_getConnectTimeout(void)
 {
     int32_t timeout = DEFAULT_CONNECT_TIMEOUT;
 
-    void *data = corto_threadTlsGet(TLS_ConnectTimeoutKey);
-    if (data) {
-        timeout = (int32_t)(intptr_t)data;
+    httpclient_Config config = (httpclient_Config)corto_threadTlsGet(
+        HTTPCLIENT_KEY_CONFIG);
+    if (config) {
+        timeout = config->connectTimeout;
     }
 
     return timeout;
+}
+
+static void httpclient_tlsConfigFree(void *o) {
+    httpclient_Config config = (httpclient_Config)o;
+    if (config) {
+        free(config);
+    }
+}
+
+int16_t httpclient_construct(void)
+{
+    if (corto_threadTlsKey(&HTTPCLIENT_KEY_CONFIG, httpclient_tlsConfigFree)) {
+        corto_seterr("Failed to initialize timeout key. Error: %s",
+            corto_lasterr());
+        goto error;
+    }
+
+    return 0;
+error:
+    return -1;
 }

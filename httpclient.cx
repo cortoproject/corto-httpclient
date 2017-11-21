@@ -11,6 +11,7 @@ int16 setTimeout(int32 timeout)
 int32 getTimeout()
 int16 setConnectTimeout(int32 timeout)
 int32 getConnectTimeout()
+int16 construct()
 
 struct Url::
   address: string
