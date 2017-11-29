@@ -3,23 +3,28 @@
 #include <corto/httpclient/httpclient.h>
 #include <curl/curl.h>
 #define INITIAL_BODY_BUFFER_SIZE (512)
-/* Logging Support */
-corto_buffer g_logBuffer;
-bool g_logSet = false;
+#define DEFAULT_CONNECT_TIMEOUT 500
+#define DEFAULT_TIMEOUT 300 * 1000
+
 struct url_data {
     size_t  size;
     char*   buffer;
 };
 
+/* Local Thread Logging Support */
+static corto_threadKey HTTPCLIENT_KEY_LOGGER;
+typedef struct httpclient_Logger_s {
+    corto_buffer    buffer;
+    bool            set;
+} *httpclient_Logger;
+
+/* Local Configuration */
+static corto_threadKey HTTPCLIENT_KEY_CONFIG;
 typedef struct httpclient_Config_s {
     int32_t     timeout;
     int32_t     connectTimeout;
 } *httpclient_Config;
 
-/* Local Configuration */
-static corto_threadKey HTTPCLIENT_KEY_CONFIG;
-#define DEFAULT_CONNECT_TIMEOUT 500
-#define DEFAULT_TIMEOUT 300 * 1000
 size_t write_data(void *ptr, size_t size, size_t nmemb, struct url_data *data) {
     size_t index = data->size;
     size_t n = (size * nmemb);
@@ -44,34 +49,59 @@ error:
 }
 
 static
-int httpclient_log(
+int16_t httpclient_log(
     CURL *handle,
     curl_infotype type,
     char *data,
     size_t size,
     void *userp);
 
-void httpclient_log_config(
+int16_t httpclient_log_config(
     CURL *curl)
 {
     if (corto_verbosityGet() <= CORTO_TRACE) {
         curl_easy_setopt(curl, CURLOPT_DEBUGFUNCTION, httpclient_log);
         curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
-        g_logSet = false;
-        corto_buffer_reset(&g_logBuffer);
-        g_logBuffer = CORTO_BUFFER_INIT;
+
+        httpclient_Logger s = (httpclient_Logger)corto_threadTlsGet(
+            HTTPCLIENT_KEY_LOGGER);
+        if (!s) {
+            s = (httpclient_Logger)malloc(sizeof(struct httpclient_Logger_s));
+            if (!s) {
+                corto_seterr("Failed to initialize logger data.");
+                goto error;
+            }
+            s->set = false;
+            s->buffer = CORTO_BUFFER_INIT;
+
+            if (corto_threadTlsSet(HTTPCLIENT_KEY_LOGGER, (void *)s)) {
+                corto_seterr("Failed to set TLS logger data. %s",
+                    corto_lasterr());
+                goto error;
+            }
+        }
+        else {
+            corto_buffer_reset(&s->buffer);
+        }
+
     }
 
+    return 0;
+error:
+    return -1;
 }
 
 void httpclient_log_print(void)
 {
-    if (g_logSet) {
-        corto_trace("LibCurl:\n%s====> LibCurl Complete.",
-            corto_buffer_str(&g_logBuffer));
-        g_logSet = false;
+    httpclient_Logger s = (httpclient_Logger)corto_threadTlsGet(
+        HTTPCLIENT_KEY_LOGGER);
+    if (s) {
+        if (s->set) {
+            corto_trace("LibCurl:\n%s====> LibCurl Complete.",
+                corto_buffer_str(&s->buffer));
+            s->set = false;
+        }
     }
-
 }
 
 void httpclient_timeout_config(
@@ -193,12 +223,25 @@ static void httpclient_tlsConfigFree(void *o) {
     }
 }
 
+static void httpclient_tlsLoggerFree(void *o) {
+    httpclient_Logger data = (httpclient_Logger)o;
+    if (data) {
+        free(data);
+    }
+}
+
 int httpclientMain(int argc, char *argv[]) {
 
     curl_global_init(CURL_GLOBAL_DEFAULT);
 
     if (corto_threadTlsKey(&HTTPCLIENT_KEY_CONFIG, httpclient_tlsConfigFree)) {
-        corto_seterr("Failed to initialize timeout key. Error: %s",
+        corto_seterr("Failed to initialize config key. Error: %s",
+            corto_lasterr());
+        goto error;
+    }
+
+    if (corto_threadTlsKey(&HTTPCLIENT_KEY_LOGGER, httpclient_tlsLoggerFree)) {
+        corto_seterr("Failed to initialize logger key. Error: %s",
             corto_lasterr());
         goto error;
     }
@@ -208,43 +251,50 @@ error:
     return -1;
 }
 
-int httpclient_log(
+int16_t httpclient_log(
     CURL *handle,
     curl_infotype type,
     char *data,
     size_t size,
     void *userp)
 {
-    g_logSet = true;
+    httpclient_Logger s = (httpclient_Logger)corto_threadTlsGet(
+        HTTPCLIENT_KEY_LOGGER);
+    if (!s) {
+        corto_error("HTTPClient Logger config uninitialized.");
+        goto error;
+    }
+
+    s->set = true;
     (void)handle; /* satisfy compiler warning */
     (void)userp;
 
     switch (type) {
         case CURLINFO_TEXT:
             // corto_info("libcurl InfoText: %s", data);
-            corto_buffer_appendstr(&g_logBuffer, "Info: ");
+            corto_buffer_appendstr(&s->buffer, "Info: ");
             break;
         default: /* in case a new one is introduced to shock us */
             corto_error("Unhandled LibCurl InfoType: \n%s", data);
             return 0;
 
         case CURLINFO_HEADER_OUT:
-            corto_buffer_appendstr(&g_logBuffer, "libcurl => Send header");
+            corto_buffer_appendstr(&s->buffer, "libcurl => Send header");
             break;
         case CURLINFO_DATA_OUT:
-            corto_buffer_appendstr(&g_logBuffer, "libcurl => Send data");
+            corto_buffer_appendstr(&s->buffer, "libcurl => Send data");
             break;
         case CURLINFO_SSL_DATA_OUT:
-            corto_buffer_appendstr(&g_logBuffer, "libcurl => Send SSL data");
+            corto_buffer_appendstr(&s->buffer, "libcurl => Send SSL data");
             break;
         case CURLINFO_HEADER_IN:
-            corto_buffer_appendstr(&g_logBuffer, "libcurl => Recv header");
+            corto_buffer_appendstr(&s->buffer, "libcurl => Recv header");
             break;
         case CURLINFO_DATA_IN:
-            corto_buffer_appendstr(&g_logBuffer, "libcurl => Recv data");
+            corto_buffer_appendstr(&s->buffer, "libcurl => Recv data");
             break;
         case CURLINFO_SSL_DATA_IN:
-            corto_buffer_appendstr(&g_logBuffer, "libcurl => Recv SSL data");
+            corto_buffer_appendstr(&s->buffer, "libcurl => Recv SSL data");
             break;
     }
 
@@ -253,9 +303,11 @@ int httpclient_log(
     corto_buffer_appendstr(&buffer, bytes);
     corto_dealloc(bytes);
     */
-    corto_buffer_appendstr(&g_logBuffer, data);
+    corto_buffer_appendstr(&s->buffer, data);
     // corto_trace("%s", corto_buffer_str(&buffer));
     return 0;
+error:
+    return -1;
 }
 
 corto_string httpclient_encodeFields(
