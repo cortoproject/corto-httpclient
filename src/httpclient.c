@@ -186,11 +186,26 @@ error:
     return (httpclient_Result){0, NULL};
 }
 
+static void httpclient_tlsConfigFree(void *o) {
+    httpclient_Config config = (httpclient_Config)o;
+    if (config) {
+        free(config);
+    }
+}
+
 int httpclientMain(int argc, char *argv[]) {
 
     curl_global_init(CURL_GLOBAL_DEFAULT);
 
-    return httpclient_construct();
+    if (corto_threadTlsKey(&HTTPCLIENT_KEY_CONFIG, httpclient_tlsConfigFree)) {
+        corto_seterr("Failed to initialize timeout key. Error: %s",
+            corto_lasterr());
+        goto error;
+    }
+
+    return 0;
+error:
+    return -1;
 }
 
 int httpclient_log(
@@ -336,24 +351,4 @@ int32_t httpclient_getConnectTimeout(void)
     }
 
     return timeout;
-}
-
-static void httpclient_tlsConfigFree(void *o) {
-    httpclient_Config config = (httpclient_Config)o;
-    if (config) {
-        free(config);
-    }
-}
-
-int16_t httpclient_construct(void)
-{
-    if (corto_threadTlsKey(&HTTPCLIENT_KEY_CONFIG, httpclient_tlsConfigFree)) {
-        corto_seterr("Failed to initialize timeout key. Error: %s",
-            corto_lasterr());
-        goto error;
-    }
-
-    return 0;
-error:
-    return -1;
 }
