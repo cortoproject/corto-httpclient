@@ -2,7 +2,6 @@
 
 #include <corto/httpclient/httpclient.h>
 #include <curl/curl.h>
-
 #define INITIAL_BODY_BUFFER_SIZE (512)
 struct url_data {
     size_t size;
@@ -38,7 +37,7 @@ httpclient_Result httpclient_get(
     httpclient_Result result = {0, NULL};
     CURL *curl = curl_easy_init();
     if (!curl) {
-        corto_seterr("could not init curl");
+        corto_throw("could not init curl");
         goto error;
     }
 
@@ -54,7 +53,7 @@ httpclient_Result httpclient_get(
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
     CURLcode res = curl_easy_perform(curl);
     if (res != CURLE_OK) {
-        corto_seterr("curl_easy_perform() failed: %s", curl_easy_strerror(res));
+        corto_throw("curl_easy_perform() failed: %s", curl_easy_strerror(res));
     }
 
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.status);
@@ -72,7 +71,7 @@ httpclient_Result httpclient_post(
     httpclient_Result result = {0, NULL};
     CURL* curl = curl_easy_init();
     if (!curl) {
-        corto_seterr("Could not init curl");
+        corto_throw("Could not init curl");
         goto error;
     }
 
@@ -94,7 +93,7 @@ httpclient_Result httpclient_post(
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
     CURLcode res = curl_easy_perform(curl);
     if (res != CURLE_OK) {
-        corto_seterr("curl_easy_perform() failed: %s", curl_easy_strerror(res));
+        corto_throw("curl_easy_perform() failed: %s", curl_easy_strerror(res));
     }
 
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.status);
@@ -105,17 +104,9 @@ error:
     return (httpclient_Result){0, NULL};
 }
 
-int clientMain(int argc, char *argv[]) {
-
-    curl_global_init(CURL_GLOBAL_DEFAULT);
-
-    return 0;
-}
-
-int httpclientMain(int argc, char *argv[]) {
+int cortomain(int argc, char *argv[]) {
 
     /* Insert implementation */
-    
+
     return 0;
 }
-

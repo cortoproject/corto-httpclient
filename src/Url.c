@@ -41,28 +41,28 @@ corto_string httpclient_Url_request(
     if (conn) {
         res = curl_easy_setopt(conn, CURLOPT_URL, this->address);
         if (res != CURLE_OK) {
-            corto_seterr("url/request set URL failed: %s\n",
+            corto_throw("url/request set URL failed: %s\n",
                 curl_easy_strerror(res));
             goto error;
         }
 
         res = curl_easy_setopt(conn, CURLOPT_WRITEFUNCTION, client_Url_onData);
         if (res != CURLE_OK) {
-            corto_seterr("url/request set callback failed: %s\n",
+            corto_throw("url/request set callback failed: %s\n",
                 curl_easy_strerror(res));
             goto error;
         }
 
        res = curl_easy_setopt(conn, CURLOPT_WRITEDATA, this);
        if (res != CURLE_OK) {
-           corto_seterr("url/request set writedata failed: %s\n",
+           corto_throw("url/request set writedata failed: %s\n",
                curl_easy_strerror(res));
            goto error;
        }
 
         res = curl_easy_perform(conn);
         if(res != CURLE_OK) {
-            corto_seterr("url/request failed: %s\n",
+            corto_throw("url/request failed: %s\n",
                 curl_easy_strerror(res));
             goto error;
         }

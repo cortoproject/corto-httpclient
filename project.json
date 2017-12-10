@@ -3,8 +3,11 @@
     "type": "package",
     "value": {
         "author": "Sander Mertens",
+        "organization": "cortoproject",
+        "repository": "https://github.com/cortoproject/httpclient",
+        "license": "MIT",
+        "description": "HTTP client utility functions",
         "version": "1.0.0",
-        "description": "HTTP client abstraction",        
         "lib": ["curl"]
     }
 }
