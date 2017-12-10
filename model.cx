@@ -6,6 +6,11 @@ struct Result::
 
 Result get(string url, string fields)
 Result post(string url, string fields)
+string encodeFields(string fields)
+int16 setTimeout(int32 timeout)
+int32 getTimeout()
+int16 setConnectTimeout(int32 timeout)
+int32 getConnectTimeout()
 
 struct Url::
   address: string
