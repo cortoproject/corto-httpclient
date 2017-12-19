@@ -5,26 +5,22 @@
 #define INITIAL_BODY_BUFFER_SIZE (512)
 #define DEFAULT_CONNECT_TIMEOUT 500
 #define DEFAULT_TIMEOUT 300 * 1000
-
 struct url_data {
     size_t  size;
     char*   buffer;
 };
-
 /* Local Thread Logging Support */
 static corto_tls HTTPCLIENT_KEY_LOGGER;
 typedef struct httpclient_Logger_s {
     corto_buffer    buffer;
     bool            set;
 } *httpclient_Logger;
-
 /* Local Configuration */
 static corto_tls HTTPCLIENT_KEY_CONFIG;
 typedef struct httpclient_Config_s {
     int32_t     timeout;
     int32_t     connectTimeout;
 } *httpclient_Config;
-
 size_t write_data(void *ptr, size_t size, size_t nmemb, struct url_data *data) {
     size_t index = data->size;
     size_t n = (size * nmemb);
@@ -55,7 +51,6 @@ int16_t httpclient_log(
     char *data,
     size_t size,
     void *userp);
-
 int16_t httpclient_log_config(
     CURL *curl)
 {
@@ -71,14 +66,16 @@ int16_t httpclient_log_config(
                 corto_throw("Failed to initialize logger data.");
                 goto error;
             }
+
             s->set = false;
             s->buffer = CORTO_BUFFER_INIT;
-
             if (corto_tls_set(HTTPCLIENT_KEY_LOGGER, (void *)s)) {
                 corto_throw("Failed to set TLS logger data");
                 goto error;
             }
+
         }
+
         else {
             corto_buffer_reset(&s->buffer);
         }
@@ -100,7 +97,9 @@ void httpclient_log_print(void)
                 corto_buffer_str(&s->buffer));
             s->set = false;
         }
+
     }
+
 }
 
 void httpclient_timeout_config(
@@ -119,8 +118,8 @@ void httpclient_timeout_config(
 }
 
 httpclient_Result httpclient_get(
-    corto_string url,
-    corto_string fields)
+    const char *url,
+    const char *fields)
 {
     httpclient_Result result = {0, NULL};
     CURL *curl = curl_easy_init();
@@ -173,8 +172,8 @@ error:
 }
 
 httpclient_Result httpclient_post(
-    corto_string url,
-    corto_string fields)
+    const char *url,
+    const char *fields)
 {
     httpclient_Result result = {0, NULL};
     CURL* curl = curl_easy_init();
@@ -215,12 +214,12 @@ error:
     return (httpclient_Result){0, NULL};
 }
 
-
 static void httpclient_tlsConfigFree(void *o) {
     httpclient_Config config = (httpclient_Config)o;
     if (config) {
         free(config);
     }
+
 }
 
 static void httpclient_tlsLoggerFree(void *o) {
@@ -228,6 +227,7 @@ static void httpclient_tlsLoggerFree(void *o) {
     if (data) {
         free(data);
     }
+
 }
 
 int cortomain(int argc, char *argv[]) {
@@ -266,7 +266,6 @@ int16_t httpclient_log(
     s->set = true;
     (void)handle; /* satisfy compiler warning */
     (void)userp;
-
     switch (type) {
         case CURLINFO_TEXT:
             // corto_info("libcurl InfoText: %s", data);
@@ -275,7 +274,6 @@ int16_t httpclient_log(
         default: /* in case a new one is introduced to shock us */
             corto_error("Unhandled LibCurl InfoType: \n%s", data);
             return 0;
-
         case CURLINFO_HEADER_OUT:
             corto_buffer_appendstr(&s->buffer, "libcurl => Send header");
             break;
@@ -309,7 +307,7 @@ error:
 }
 
 corto_string httpclient_encodeFields(
-    corto_string fields)
+    const char *fields)
 {
     corto_string encoded = curl_easy_escape(NULL, fields, 0);
     return encoded;
@@ -332,11 +330,11 @@ int16_t httpclient_setTimeout(
             corto_throw("Failed to initialize configuration data.");
             goto error;
         }
+
         config->timeout  = DEFAULT_CONNECT_TIMEOUT;
     }
 
     config->timeout = timeout;
-
     if (corto_tls_set(HTTPCLIENT_KEY_CONFIG, (void *)config)) {
         corto_throw("Failed to set TLS connect timeout data");
         goto error;
@@ -373,11 +371,11 @@ int16_t httpclient_setConnectTimeout(
             corto_throw("Failed to initialize configuration data");
             goto error;
         }
+
         config->timeout  = DEFAULT_TIMEOUT;
     }
 
     config->connectTimeout = timeout;
-
     if (corto_tls_set(HTTPCLIENT_KEY_CONFIG, (void *)config)) {
         corto_throw("Failed to set TLS connect timeout data");
         goto error;
@@ -400,3 +398,4 @@ int32_t httpclient_getConnectTimeout(void)
 
     return timeout;
 }
+
