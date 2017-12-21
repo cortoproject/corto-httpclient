@@ -35,7 +35,7 @@ corto_string httpclient_Url_request(
     CURL *conn;
     CURLcode res;
 
-    corto_set_str(&this->response, NULL);
+    corto_ptr_setstr(&this->response, NULL);
 
     conn = curl_easy_init();
     if (conn) {
