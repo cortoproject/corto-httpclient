@@ -8,7 +8,6 @@
 #define CORTO_HTTPCLIENT_H
 
 #include <corto/corto.h>
-#include <corto/corto.h>
 #include <corto/httpclient/_project.h>
 #include <corto/c/c.h>
 

@@ -1,6 +1,6 @@
 in package /corto/httpclient
 
-struct Result::
+struct Result:/
   status: uint16
   response: string
 
@@ -12,7 +12,7 @@ int32 getTimeout()
 int16 setConnectTimeout(int32 timeout)
 int32 getConnectTimeout()
 
-struct Url::
+struct Url:/
   address: string
   response: string, private | local
   string request()
