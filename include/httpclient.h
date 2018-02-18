@@ -1,5 +1,4 @@
 /* httpclient.h
- *
  * This is the main package file. Include this file in other projects.
  * Only modify inside the header-end and body-end sections.
  */
@@ -18,6 +17,7 @@
 #include <corto/httpclient/_type.h>
 #include <corto/httpclient/_interface.h>
 #include <corto/httpclient/_load.h>
+#include <corto/httpclient/_binding.h>
 #include <corto/httpclient/c/_api.h>
 
 /* $body() */
