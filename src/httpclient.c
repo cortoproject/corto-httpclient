@@ -19,7 +19,7 @@ typedef struct httpclient_Logger_s {
 static corto_tls HTTPCLIENT_KEY_CONFIG;
 typedef struct httpclient_Config_s {
     int32_t     timeout;
-    int32_t     connectTimeout;
+    int32_t     connect_timeout;
     corto_string user;
     corto_string password;
 } *httpclient_Config;
@@ -109,12 +109,12 @@ void httpclient_log_print(void)
 void httpclient_timeout_config(
     CURL *curl)
 {
-    long to = httpclient_getTimeout();
+    long to = httpclient_get_timeout();
     if (curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, to) != CURLE_OK) {
         corto_error("Failed to set CURLOPT_TIMEOUT_MS.");
     }
 
-    long cto = httpclient_getConnectTimeout();
+    long cto = httpclient_get_connect_timeout();
     if (curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, cto) != CURLE_OK) {
         corto_error("Failed to set CURLOPT_CONNECTTIMEOUT_MS.");
     }
@@ -263,7 +263,7 @@ httpclient_Config httpclient_Config__create(void) {
     o->user = NULL;
     o->password = NULL;
     o->timeout = DEFAULT_TIMEOUT;
-    o->connectTimeout = DEFAULT_CONNECT_TIMEOUT;
+    o->connect_timeout = DEFAULT_CONNECT_TIMEOUT;
 
     if (!o) {
         corto_throw("Failed to initialize configuration data");
@@ -372,7 +372,7 @@ error:
     return -1;
 }
 
-corto_string httpclient_encodeFields(
+corto_string httpclient_encode_fields(
     const char *fields)
 {
     corto_string encoded = curl_easy_escape(NULL, fields, 0);
@@ -385,7 +385,7 @@ corto_string httpclient_encodeFields(
  * operations. This option may cause libcurl to use the SIGALRM signal to
  * timeout system calls.
  */
-int16_t httpclient_setTimeout(
+int16_t httpclient_set_timeout(
     int32_t timeout)
 {
     httpclient_Config config = httpclient_Config_get();
@@ -400,7 +400,7 @@ error:
     return -1;
 }
 
-int32_t httpclient_getTimeout(void)
+int32_t httpclient_get_timeout(void)
 {
     int32_t timeout = DEFAULT_TIMEOUT;
 
@@ -414,7 +414,7 @@ int32_t httpclient_getTimeout(void)
 
 /* Maximum time, in milliseconds, that the connection phase is allowed to
  * execute before failing to connect to host */
-int16_t httpclient_setConnectTimeout(
+int16_t httpclient_set_connect_timeout(
     int32_t timeout)
 {
     httpclient_Config config = httpclient_Config_get();
@@ -422,20 +422,20 @@ int16_t httpclient_setConnectTimeout(
         goto error;
     }
 
-    config->connectTimeout = timeout;
+    config->connect_timeout = timeout;
 
     return 0;
 error:
     return -1;
 }
 
-int32_t httpclient_getConnectTimeout(void)
+int32_t httpclient_get_connect_timeout(void)
 {
     int32_t timeout = DEFAULT_CONNECT_TIMEOUT;
 
     httpclient_Config config = httpclient_Config_get();
     if (config) {
-        timeout = config->connectTimeout;
+        timeout = config->connect_timeout;
     }
 
     return timeout;
