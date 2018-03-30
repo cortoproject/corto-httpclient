@@ -19,12 +19,17 @@ typedef struct httpclient_Logger_s {
 static corto_tls HTTPCLIENT_KEY_CONFIG;
 typedef struct httpclient_Config_s {
     int32_t     timeout;
-    int32_t     connectTimeout;
+    int32_t     connect_timeout;
     corto_string user;
     corto_string password;
 } *httpclient_Config;
 
-size_t write_data(void *ptr, size_t size, size_t nmemb, struct url_data *data) {
+size_t write_data(
+    void *ptr,
+    size_t size,
+    size_t nmemb,
+    struct url_data *data)
+{
     size_t index = data->size;
     size_t n = (size * nmemb);
     char* tmp;
@@ -54,6 +59,8 @@ int16_t httpclient_log(
     char *data,
     size_t size,
     void *userp);
+
+httpclient_Config httpclient_Config_get(void);
 
 int16_t httpclient_log_config(
     CURL *curl)
@@ -109,35 +116,44 @@ void httpclient_log_print(void)
 void httpclient_timeout_config(
     CURL *curl)
 {
-    long to = httpclient_getTimeout();
+    long to = httpclient_get_timeout();
     if (curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, to) != CURLE_OK) {
         corto_error("Failed to set CURLOPT_TIMEOUT_MS.");
     }
 
-    long cto = httpclient_getConnectTimeout();
+    long cto = httpclient_get_connect_timeout();
     if (curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, cto) != CURLE_OK) {
         corto_error("Failed to set CURLOPT_CONNECTTIMEOUT_MS.");
     }
 }
 
-void httpclient_auth_config(
+int16_t httpclient_auth_config(
     CURL *curl)
 {
-    corto_string user = httpclient_get_user();
-    corto_string password = httpclient_get_password();
+    httpclient_Config cfg = httpclient_Config_get();
+    if (!cfg) {
+        goto noauth;
+    }
 
-    if (!user || !password) {
+    if (!cfg->user || !cfg->password) {
         /* Auth Not configured */
-        return;
+        goto noauth;
     }
 
-    if (curl_easy_setopt(curl, CURLOPT_USERNAME, user) != CURLE_OK) {
-        corto_error("Failed to set CURLOPT_USERNAME.");
+    if (curl_easy_setopt(curl, CURLOPT_USERNAME, cfg->user) != CURLE_OK) {
+        corto_throw("Failed to set CURLOPT_USERNAME.");
+        goto error;
     }
 
-    if (curl_easy_setopt(curl, CURLOPT_PASSWORD, password) != CURLE_OK) {
-        corto_error("Failed to set CURLOPT_PASSWORD.");
+    if (curl_easy_setopt(curl, CURLOPT_PASSWORD, cfg->password) != CURLE_OK) {
+        corto_throw("Failed to set CURLOPT_PASSWORD.");
+        goto error;
     }
+
+noauth:
+    return 0;
+error:
+    return -1;
 }
 
 httpclient_Result httpclient_get(
@@ -173,8 +189,10 @@ httpclient_Result httpclient_get(
         curl_easy_setopt(curl, CURLOPT_URL, url);
     }
 
+    if (httpclient_auth_config(curl)) {
+        goto error;
+    }
     httpclient_timeout_config(curl);
-    httpclient_auth_config(curl);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
     CURLcode res = curl_easy_perform(curl);
@@ -218,9 +236,11 @@ httpclient_Result httpclient_post(
         goto error;
     }
 
+    if (httpclient_auth_config(curl)) {
+        goto error;
+    }
     httpclient_timeout_config(curl);
     httpclient_log_config(curl);
-    httpclient_auth_config(curl);
 
     data.buffer[0] = '\0';
     curl_easy_setopt(curl, CURLOPT_URL, url);
@@ -240,7 +260,9 @@ error:
     return (httpclient_Result){0, NULL};
 }
 
-static void httpclient_tlsConfigFree(void *o) {
+static void httpclient_tlsConfigFree(
+    void *o)
+{
     httpclient_Config config = (httpclient_Config)o;
     if (config) {
         if (config->user) {
@@ -260,14 +282,16 @@ httpclient_Config httpclient_Config__create(void) {
     httpclient_Config o = (httpclient_Config)malloc(
         sizeof(struct httpclient_Config_s));
 
+    if (!o) {
+        corto_throw("Failed to initialize configuration data");
+        goto error;
+    }
+
     o->user = NULL;
     o->password = NULL;
     o->timeout = DEFAULT_TIMEOUT;
-    o->connectTimeout = DEFAULT_CONNECT_TIMEOUT;
+    o->connect_timeout = DEFAULT_CONNECT_TIMEOUT;
 
-    if (!o) {
-        corto_throw("Failed to initialize configuration data");
-    }
 
     if (corto_tls_set(HTTPCLIENT_KEY_CONFIG, (void *)o)) {
         corto_throw("Failed to set TLS connect timeout data");
@@ -276,6 +300,8 @@ httpclient_Config httpclient_Config__create(void) {
     }
 
     return o;
+error:
+    return NULL;
 }
 
 httpclient_Config httpclient_Config_get(void) {
@@ -372,7 +398,7 @@ error:
     return -1;
 }
 
-corto_string httpclient_encodeFields(
+corto_string httpclient_encode_fields(
     const char *fields)
 {
     corto_string encoded = curl_easy_escape(NULL, fields, 0);
@@ -385,7 +411,7 @@ corto_string httpclient_encodeFields(
  * operations. This option may cause libcurl to use the SIGALRM signal to
  * timeout system calls.
  */
-int16_t httpclient_setTimeout(
+int16_t httpclient_set_timeout(
     int32_t timeout)
 {
     httpclient_Config config = httpclient_Config_get();
@@ -400,7 +426,7 @@ error:
     return -1;
 }
 
-int32_t httpclient_getTimeout(void)
+int32_t httpclient_get_timeout(void)
 {
     int32_t timeout = DEFAULT_TIMEOUT;
 
@@ -414,7 +440,7 @@ int32_t httpclient_getTimeout(void)
 
 /* Maximum time, in milliseconds, that the connection phase is allowed to
  * execute before failing to connect to host */
-int16_t httpclient_setConnectTimeout(
+int16_t httpclient_set_connect_timeout(
     int32_t timeout)
 {
     httpclient_Config config = httpclient_Config_get();
@@ -422,20 +448,20 @@ int16_t httpclient_setConnectTimeout(
         goto error;
     }
 
-    config->connectTimeout = timeout;
+    config->connect_timeout = timeout;
 
     return 0;
 error:
     return -1;
 }
 
-int32_t httpclient_getConnectTimeout(void)
+int32_t httpclient_get_connect_timeout(void)
 {
     int32_t timeout = DEFAULT_CONNECT_TIMEOUT;
 
     httpclient_Config config = httpclient_Config_get();
     if (config) {
-        timeout = config->connectTimeout;
+        timeout = config->connect_timeout;
     }
 
     return timeout;
