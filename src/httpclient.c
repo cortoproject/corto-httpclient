@@ -22,6 +22,7 @@ typedef struct httpclient_Config_s {
     int32_t     connect_timeout;
     corto_string user;
     corto_string password;
+    struct curl_slist *headers;
 } *httpclient_Config;
 
 size_t write_data(
@@ -197,7 +198,7 @@ httpclient_Result httpclient_get(
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
     CURLcode res = curl_easy_perform(curl);
     if (res != CURLE_OK) {
-        corto_throw("curl_easy_perform() failed: %s", curl_easy_strerror(res));
+        corto_warning("curl_easy_perform() failed: %s", curl_easy_strerror(res));
     }
 
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.status);
@@ -213,21 +214,16 @@ error:
     return (httpclient_Result){0, NULL};
 }
 
-httpclient_Result httpclient_post(
+httpclient_Result httpclient_post_impl(
     const char *url,
-    const char *fields)
+    CURL *curl)
 {
     httpclient_Result result = {0, NULL};
-    CURL* curl = curl_easy_init();
-    if (!curl) {
-        corto_throw("Could not init curl");
-        goto error;
-    }
-
     curl_easy_setopt(curl, CURLOPT_URL, url);
-    if (fields) {
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, fields);
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)strlen(fields));
+
+    struct curl_slist *headers = (struct curl_slist *)httpclient_get_headers();
+    if (headers) {
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
     }
 
     struct url_data data = {0, NULL};
@@ -248,7 +244,7 @@ httpclient_Result httpclient_post(
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
     CURLcode res = curl_easy_perform(curl);
     if (res != CURLE_OK) {
-        corto_throw("curl_easy_perform() failed: %s", curl_easy_strerror(res));
+        corto_warning("curl_easy_perform() failed: %s", curl_easy_strerror(res));
     }
 
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.status);
@@ -256,6 +252,63 @@ httpclient_Result httpclient_post(
     curl_easy_cleanup(curl);
     httpclient_log_print();
     return result;
+error:
+    return (httpclient_Result){0, NULL};
+}
+
+httpclient_Result httpclient_post(
+    const char *url,
+    const char *fields)
+{
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        corto_throw("Could not init curl");
+        goto error;
+    }
+
+    if (fields) {
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, fields);
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)strlen(fields));
+    }
+
+    return httpclient_post_impl(url, curl);
+error:
+    return (httpclient_Result){0, NULL};
+}
+
+httpclient_Result httpclient_post_body(
+    const char *url,
+    const char *fields)
+{
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        corto_throw("Could not init curl");
+        goto error;
+    }
+
+    curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "POST");
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, fields);
+
+    return httpclient_post_impl(url, curl);
+error:
+    return (httpclient_Result){0, NULL};
+}
+
+httpclient_Result httpclient_post_json(
+    const char *url,
+    const char *fields)
+{
+    if (httpclient_append_headers("Accept: application/json")) {
+        corto_throw("Failed to set HTTP headers.");
+        goto error;
+    }
+
+    if (httpclient_append_headers("Accept: application/json")) {
+        corto_throw("Failed to set HTTP headers.");
+        goto error;
+    }
+
+    return httpclient_post_body(url, fields);
 error:
     return (httpclient_Result){0, NULL};
 }
@@ -291,7 +344,7 @@ httpclient_Config httpclient_Config__create(void) {
     o->password = NULL;
     o->timeout = DEFAULT_TIMEOUT;
     o->connect_timeout = DEFAULT_CONNECT_TIMEOUT;
-
+    o->headers = NULL;
 
     if (corto_tls_set(HTTPCLIENT_KEY_CONFIG, (void *)o)) {
         corto_throw("Failed to set TLS connect timeout data");
@@ -519,4 +572,32 @@ corto_string httpclient_get_user(void)
     }
 
     return user;
+}
+
+int16_t httpclient_append_headers(
+    const char *data)
+{
+    httpclient_Config config = httpclient_Config_get();
+    if (!config) {
+        goto error;
+    }
+
+    config->headers = curl_slist_append(
+        config->headers,
+        data);
+
+    return 0;
+error:
+    return -1;
+}
+
+uintptr_t httpclient_get_headers(void)
+{
+    struct curl_slist *headers = NULL;
+    httpclient_Config config = httpclient_Config_get();
+    if (config) {
+        headers = config->headers;
+    }
+
+    return (corto_word)headers;
 }
