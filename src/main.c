@@ -198,7 +198,8 @@ httpclient_Result httpclient_get(
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
     CURLcode res = curl_easy_perform(curl);
     if (res != CURLE_OK) {
-        corto_warning("curl_easy_perform() failed: %s", curl_easy_strerror(res));
+        corto_warning("curl_easy_perform() on [%s] failed: %s",
+            url, curl_easy_strerror(res));
     }
 
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.status);
@@ -244,7 +245,8 @@ httpclient_Result httpclient_post_impl(
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
     CURLcode res = curl_easy_perform(curl);
     if (res != CURLE_OK) {
-        corto_warning("curl_easy_perform() failed: %s", curl_easy_strerror(res));
+        corto_warning("curl_easy_perform() on [%s] failed: %s",
+            url, curl_easy_strerror(res));
     }
 
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.status);
