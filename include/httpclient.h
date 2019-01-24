@@ -6,19 +6,20 @@
 #ifndef CORTO_HTTPCLIENT_H
 #define CORTO_HTTPCLIENT_H
 
-#include <corto/corto.h>
-#include <corto/httpclient/_project.h>
-#include <corto/c/c.h>
+#include "bake_config.h"
+
+#define CORTO_HTTPCLIENT_ETC ut_locate("corto.httpclient", NULL, UT_LOCATE_ETC)
 
 /* $header() */
 /* Definitions that are required by package headers (native types) go here. */
 /* $end */
 
-#include <corto/httpclient/_type.h>
-#include <corto/httpclient/_interface.h>
-#include <corto/httpclient/_load.h>
-#include <corto/httpclient/_binding.h>
-#include <corto/httpclient/c/_api.h>
+#include "_type.h"
+#include "_interface.h"
+#include "_load.h"
+#include "_binding.h"
+
+#include <corto.httpclient.c>
 
 /* $body() */
 /* Definitions here that need your package headers go here. */
