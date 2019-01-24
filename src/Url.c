@@ -1,7 +1,6 @@
 /* This is a managed file. Do not delete this comment. */
 
-#include <corto/httpclient/httpclient.h>
-
+#include <corto.httpclient>
 #include <curl/curl.h>
 
 static int client_Url_onData(
@@ -41,28 +40,28 @@ corto_string httpclient_Url_request(
     if (conn) {
         res = curl_easy_setopt(conn, CURLOPT_URL, this->address);
         if (res != CURLE_OK) {
-            corto_throw("url/request set URL failed: %s\n",
+            ut_throw("url/request set URL failed: %s\n",
                 curl_easy_strerror(res));
             goto error;
         }
 
         res = curl_easy_setopt(conn, CURLOPT_WRITEFUNCTION, client_Url_onData);
         if (res != CURLE_OK) {
-            corto_throw("url/request set callback failed: %s\n",
+            ut_throw("url/request set callback failed: %s\n",
                 curl_easy_strerror(res));
             goto error;
         }
 
        res = curl_easy_setopt(conn, CURLOPT_WRITEDATA, this);
        if (res != CURLE_OK) {
-           corto_throw("url/request set writedata failed: %s\n",
+           ut_throw("url/request set writedata failed: %s\n",
                curl_easy_strerror(res));
            goto error;
        }
 
         res = curl_easy_perform(conn);
         if(res != CURLE_OK) {
-            corto_throw("url/request failed: %s\n",
+            ut_throw("url/request failed: %s\n",
                 curl_easy_strerror(res));
             goto error;
         }
@@ -70,7 +69,7 @@ corto_string httpclient_Url_request(
         curl_easy_cleanup(conn);
     }
 
-    return corto_strdup(this->response);
+    return ut_strdup(this->response);
 error:
     return NULL;
 }

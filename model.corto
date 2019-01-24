@@ -6,24 +6,30 @@ struct Result {
 }
 
 get(string url, string fields) Result
-post(string url, string fields) Result
-post_body(string url, string fields) Result
-post_json(string url, string fields) Result
+post(string url) Result
 encode_fields(string fields) string
-set_user(string user) int16
-get_user() string
-set_password(string password) int16
-get_password() string
+set_auth(string user, string password) int16
+set_field(string key, string value) int16
+set_header(string header, string value) int16
+
 get_timeout() int32
 set_timeout(int32 timeout) int16
 get_timeout() int32
 set_connect_timeout(int32 timeout) int16
 get_connect_timeout() int32
-append_headers(string data) int16
-get_headers() word
 
 struct Url {
     address: string
     response: string, private | local
     request() string
 }
+
+// Deprecated
+set_user(string user) int16
+get_user() string
+set_password(string password) int16
+get_password() string
+post_body(string url, string fields) Result
+post_json(string url, string fields) Result
+append_headers(string data) int16
+get_headers() word

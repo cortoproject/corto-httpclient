@@ -1,6 +1,6 @@
 /* This is a managed file. Do not delete this comment. */
 
-#include <corto/httpclient/httpclient.h>
+#include <corto.httpclient>
 #include <curl/curl.h>
 #define INITIAL_BODY_BUFFER_SIZE (512)
 #define DEFAULT_CONNECT_TIMEOUT 500
@@ -9,19 +9,27 @@ struct url_data {
     size_t  size;
     char*   buffer;
 };
+
 /* Local Thread Logging Support */
-static corto_tls HTTPCLIENT_KEY_LOGGER;
+static ut_tls HTTPCLIENT_KEY_LOGGER;
+
 typedef struct httpclient_Logger_s {
-    corto_buffer    buffer;
+    ut_strbuf    buffer;
     bool            set;
 } *httpclient_Logger;
+
 /* Local Configuration */
-static corto_tls HTTPCLIENT_KEY_CONFIG;
+static ut_tls HTTPCLIENT_KEY_CONFIG;
+
 typedef struct httpclient_Config_s {
     int32_t     timeout;
     int32_t     connect_timeout;
-    corto_string user;
-    corto_string password;
+    char* user;
+    char* password;
+    ut_strbuf header;
+    uint32_t header_count;
+    ut_strbuf data;
+    uint32_t data_count;
     struct curl_slist *headers;
 } *httpclient_Config;
 
@@ -66,30 +74,30 @@ httpclient_Config httpclient_Config_get(void);
 int16_t httpclient_log_config(
     CURL *curl)
 {
-    if (corto_log_verbosityGet() <= CORTO_TRACE) {
+    if (ut_log_verbosityGet() <= UT_TRACE) {
         curl_easy_setopt(curl, CURLOPT_DEBUGFUNCTION, httpclient_log);
         curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
 
-        httpclient_Logger s = (httpclient_Logger)corto_tls_get(
+        httpclient_Logger s = (httpclient_Logger)ut_tls_get(
             HTTPCLIENT_KEY_LOGGER);
         if (!s) {
             s = (httpclient_Logger)malloc(sizeof(struct httpclient_Logger_s));
             if (!s) {
-                corto_throw("Failed to initialize logger data.");
+                ut_throw("Failed to initialize logger data.");
                 goto error;
             }
 
             s->set = false;
-            s->buffer = CORTO_BUFFER_INIT;
-            if (corto_tls_set(HTTPCLIENT_KEY_LOGGER, (void *)s)) {
-                corto_throw("Failed to set TLS logger data");
+            s->buffer = UT_STRBUF_INIT;
+            if (ut_tls_set(HTTPCLIENT_KEY_LOGGER, (void *)s)) {
+                ut_throw("Failed to set TLS logger data");
                 goto error;
             }
 
         }
 
         else {
-            corto_buffer_reset(&s->buffer);
+            ut_strbuf_reset(&s->buffer);
         }
 
     }
@@ -101,17 +109,15 @@ error:
 
 void httpclient_log_print(void)
 {
-    httpclient_Logger s = (httpclient_Logger)corto_tls_get(
+    httpclient_Logger s = (httpclient_Logger)ut_tls_get(
         HTTPCLIENT_KEY_LOGGER);
     if (s) {
         if (s->set) {
-            corto_trace("LibCurl:\n%s====> LibCurl Complete.",
-                corto_buffer_str(&s->buffer));
+            ut_trace("LibCurl:\n%s====> LibCurl Complete.",
+                ut_strbuf_get(&s->buffer));
             s->set = false;
         }
-
     }
-
 }
 
 void httpclient_timeout_config(
@@ -119,12 +125,12 @@ void httpclient_timeout_config(
 {
     long to = httpclient_get_timeout();
     if (curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, to) != CURLE_OK) {
-        corto_error("Failed to set CURLOPT_TIMEOUT_MS.");
+        ut_error("Failed to set CURLOPT_TIMEOUT_MS.");
     }
 
     long cto = httpclient_get_connect_timeout();
     if (curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, cto) != CURLE_OK) {
-        corto_error("Failed to set CURLOPT_CONNECTTIMEOUT_MS.");
+        ut_error("Failed to set CURLOPT_CONNECTTIMEOUT_MS.");
     }
 }
 
@@ -142,12 +148,12 @@ int16_t httpclient_auth_config(
     }
 
     if (curl_easy_setopt(curl, CURLOPT_USERNAME, cfg->user) != CURLE_OK) {
-        corto_throw("Failed to set CURLOPT_USERNAME.");
+        ut_throw("Failed to set CURLOPT_USERNAME.");
         goto error;
     }
 
     if (curl_easy_setopt(curl, CURLOPT_PASSWORD, cfg->password) != CURLE_OK) {
-        corto_throw("Failed to set CURLOPT_PASSWORD.");
+        ut_throw("Failed to set CURLOPT_PASSWORD.");
         goto error;
     }
 
@@ -164,14 +170,14 @@ httpclient_Result httpclient_get(
     httpclient_Result result = {0, NULL};
     CURL *curl = curl_easy_init();
     if (!curl) {
-        corto_throw("could not init curl");
+        ut_throw("could not init curl");
         goto error;
     }
 
     /* Build URL with Fields concatenated as parameters */
     corto_string urlParams = NULL;
     if ((fields) && (strlen(fields) > 0)) {
-        urlParams = corto_asprintf("%s&%s", url, fields);
+        urlParams = ut_asprintf("%s&%s", url, fields);
     }
 
     struct url_data data = {0, NULL};
@@ -198,7 +204,7 @@ httpclient_Result httpclient_get(
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
     CURLcode res = curl_easy_perform(curl);
     if (res != CURLE_OK) {
-        corto_warning("curl_easy_perform() failed: %s", curl_easy_strerror(res));
+        ut_warning("curl_easy_perform() failed: %s", curl_easy_strerror(res));
     }
 
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.status);
@@ -218,8 +224,20 @@ httpclient_Result httpclient_post_impl(
     const char *url,
     CURL *curl)
 {
+    httpclient_Config cfg = httpclient_Config_get();
+    if (!cfg) {
+        goto error;
+    }
+
     httpclient_Result result = {0, NULL};
     curl_easy_setopt(curl, CURLOPT_URL, url);
+
+    char *fields = ut_strbuf_get(&cfg->data);
+    if (fields) {
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, fields);
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)strlen(fields));
+        printf("fields = %s\n", fields);
+    }
 
     struct curl_slist *headers = (struct curl_slist *)httpclient_get_headers();
     if (headers) {
@@ -244,31 +262,28 @@ httpclient_Result httpclient_post_impl(
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
     CURLcode res = curl_easy_perform(curl);
     if (res != CURLE_OK) {
-        corto_warning("curl_easy_perform() failed: %s", curl_easy_strerror(res));
+        ut_warning("curl_easy_perform() failed: %s", curl_easy_strerror(res));
     }
 
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &result.status);
     result.response = data.buffer;
     curl_easy_cleanup(curl);
     httpclient_log_print();
+
+    free(fields);
+
     return result;
 error:
     return (httpclient_Result){0, NULL};
 }
 
 httpclient_Result httpclient_post(
-    const char *url,
-    const char *fields)
+    const char *url)
 {
     CURL* curl = curl_easy_init();
     if (!curl) {
-        corto_throw("Could not init curl");
+        ut_throw("Could not init curl");
         goto error;
-    }
-
-    if (fields) {
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, fields);
-        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)strlen(fields));
     }
 
     return httpclient_post_impl(url, curl);
@@ -282,7 +297,7 @@ httpclient_Result httpclient_post_body(
 {
     CURL* curl = curl_easy_init();
     if (!curl) {
-        corto_throw("Could not init curl");
+        ut_throw("Could not init curl");
         goto error;
     }
 
@@ -299,12 +314,12 @@ httpclient_Result httpclient_post_json(
     const char *fields)
 {
     if (httpclient_append_headers("Accept: application/json")) {
-        corto_throw("Failed to set HTTP headers.");
+        ut_throw("Failed to set HTTP headers.");
         goto error;
     }
 
     if (httpclient_append_headers("Accept: application/json")) {
-        corto_throw("Failed to set HTTP headers.");
+        ut_throw("Failed to set HTTP headers.");
         goto error;
     }
 
@@ -336,18 +351,22 @@ httpclient_Config httpclient_Config__create(void) {
         sizeof(struct httpclient_Config_s));
 
     if (!o) {
-        corto_throw("Failed to initialize configuration data");
+        ut_throw("Failed to initialize configuration data");
         goto error;
     }
 
     o->user = NULL;
     o->password = NULL;
+    o->header = UT_STRBUF_INIT;
+    o->data = UT_STRBUF_INIT;
+    o->header_count = 0;
+    o->data_count = 0;
     o->timeout = DEFAULT_TIMEOUT;
     o->connect_timeout = DEFAULT_CONNECT_TIMEOUT;
     o->headers = NULL;
 
-    if (corto_tls_set(HTTPCLIENT_KEY_CONFIG, (void *)o)) {
-        corto_throw("Failed to set TLS connect timeout data");
+    if (ut_tls_set(HTTPCLIENT_KEY_CONFIG, (void *)o)) {
+        ut_throw("Failed to set TLS connect timeout data");
         free(o);
         o = NULL;
     }
@@ -358,7 +377,7 @@ error:
 }
 
 httpclient_Config httpclient_Config_get(void) {
-    httpclient_Config config = (httpclient_Config)corto_tls_get(
+    httpclient_Config config = (httpclient_Config)ut_tls_get(
         HTTPCLIENT_KEY_CONFIG);
     if (!config) {
         config = httpclient_Config__create();
@@ -379,13 +398,13 @@ int cortomain(int argc, char *argv[]) {
 
     curl_global_init(CURL_GLOBAL_DEFAULT);
 
-    if (corto_tls_new(&HTTPCLIENT_KEY_CONFIG, httpclient_tlsConfigFree)) {
-        corto_throw("Failed to initialize config key");
+    if (ut_tls_new(&HTTPCLIENT_KEY_CONFIG, httpclient_tlsConfigFree)) {
+        ut_throw("Failed to initialize config key");
         goto error;
     }
 
-    if (corto_tls_new(&HTTPCLIENT_KEY_LOGGER, httpclient_tlsLoggerFree)) {
-        corto_throw("Failed to initialize logger key");
+    if (ut_tls_new(&HTTPCLIENT_KEY_LOGGER, httpclient_tlsLoggerFree)) {
+        ut_throw("Failed to initialize logger key");
         goto error;
     }
 
@@ -401,10 +420,10 @@ int16_t httpclient_log(
     size_t size,
     void *userp)
 {
-    httpclient_Logger s = (httpclient_Logger)corto_tls_get(
+    httpclient_Logger s = (httpclient_Logger)ut_tls_get(
         HTTPCLIENT_KEY_LOGGER);
     if (!s) {
-        corto_error("HTTPClient Logger config uninitialized.");
+        ut_error("HTTPClient Logger config uninitialized.");
         goto error;
     }
 
@@ -413,39 +432,39 @@ int16_t httpclient_log(
     (void)userp;
     switch (type) {
         case CURLINFO_TEXT:
-            // corto_info("libcurl InfoText: %s", data);
-            corto_buffer_appendstr(&s->buffer, "Info: ");
+            // ut_info("libcurl InfoText: %s", data);
+            ut_strbuf_appendstr(&s->buffer, "Info: ");
             break;
         default: /* in case a new one is introduced to shock us */
-            corto_error("Unhandled LibCurl InfoType: \n%s", data);
+            ut_error("Unhandled LibCurl InfoType: \n%s", data);
             return 0;
         case CURLINFO_HEADER_OUT:
-            corto_buffer_appendstr(&s->buffer, "libcurl => Send header");
+            ut_strbuf_appendstr(&s->buffer, "libcurl => Send header");
             break;
         case CURLINFO_DATA_OUT:
-            corto_buffer_appendstr(&s->buffer, "libcurl => Send data");
+            ut_strbuf_appendstr(&s->buffer, "libcurl => Send data");
             break;
         case CURLINFO_SSL_DATA_OUT:
-            corto_buffer_appendstr(&s->buffer, "libcurl => Send SSL data");
+            ut_strbuf_appendstr(&s->buffer, "libcurl => Send SSL data");
             break;
         case CURLINFO_HEADER_IN:
-            corto_buffer_appendstr(&s->buffer, "libcurl => Recv header");
+            ut_strbuf_appendstr(&s->buffer, "libcurl => Recv header");
             break;
         case CURLINFO_DATA_IN:
-            corto_buffer_appendstr(&s->buffer, "libcurl => Recv data");
+            ut_strbuf_appendstr(&s->buffer, "libcurl => Recv data");
             break;
         case CURLINFO_SSL_DATA_IN:
-            corto_buffer_appendstr(&s->buffer, "libcurl => Recv SSL data");
+            ut_strbuf_appendstr(&s->buffer, "libcurl => Recv SSL data");
             break;
     }
 
     /* Uncomment to debug byte size resolution.
-    corto_string bytes = corto_asprintf(" [%ld bytes]", (long)size);
-    corto_buffer_appendstr(&buffer, bytes);
+    corto_string bytes = ut_asprintf(" [%ld bytes]", (long)size);
+    ut_strbuf_appendstr(&buffer, bytes);
     corto_dealloc(bytes);
     */
-    corto_buffer_appendstr(&s->buffer, data);
-    // corto_trace("%s", corto_buffer_str(&buffer));
+    ut_strbuf_appendstr(&s->buffer, data);
+    // ut_trace("%s", ut_strbuf_get(&buffer));
     return 0;
 error:
     return -1;
@@ -600,4 +619,50 @@ uintptr_t httpclient_get_headers(void)
     }
 
     return (corto_word)headers;
+}
+
+int16_t httpclient_set_auth(
+    const char *user,
+    const char *password)
+{
+    httpclient_Config config = httpclient_Config_get();
+    if (!config) {
+        goto error;
+    }
+
+    corto_set_str(&config->user, user);
+    corto_set_str(&config->password, password);
+
+    return 0;
+error:
+    return -1;
+}
+
+int16_t httpclient_set_field(
+    const char *key,
+    const char *value)
+{
+    httpclient_Config config = httpclient_Config_get();
+    if (!config) {
+        goto error;
+    }
+
+    if (config->data_count) {
+        ut_strbuf_append(&config->data, "&%s=%s", key, value);
+    } else {
+        ut_strbuf_append(&config->data, "%s=%s", key, value);
+    }
+
+    config->data_count ++;
+
+    return 0;
+error:
+    return -1;
+}
+
+int16_t httpclient_set_header(
+    const char *header,
+    const char *value)
+{
+    /* Insert implementation */
 }
